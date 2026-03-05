@@ -2,43 +2,40 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
-# Define time window
-today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-yesterday = today - timedelta(days=1)
+df = pd.read_csv("data/raw/list_pd_events.csv")
+df = df[df["Exchange"] == "Binance"]
+df = df.drop(columns=["Channel", "Exchange"])
 
-start_ms = int(yesterday.timestamp() * 1000)
-end_ms   = int(today.timestamp() * 1000)
+df_mini = df
 
-# Pull klines
-response = requests.get(
-    "https://api.binance.us/api/v3/klines",
-    params={
-        "symbol":    "BTCUSDT",
-        "interval":  "1m",
-        "startTime": start_ms,
-        "endTime":   end_ms,
-        "limit":     1000
-    }
-)
+for coin in df_mini.itertuples():
+    _, date, currency, success, pump_date = coin
+    if pd.isna(pump_date):
+        pump_date = date
+    # define time window of pump
+    pump_date = datetime.fromisoformat(pump_date)
+    start_ms = int((pump_date - timedelta(minutes=30)).timestamp() * 1000)
+    end_ms = int((pump_date + timedelta(minutes=30)).timestamp() * 1000)
+    
+    # fetch data from binance
+    response = requests.get(
+        "https://api.binance.com/api/v3/klines",
+        params={
+            "symbol":    currency + "BTC",
+            "interval":  "1m",
+            "startTime": start_ms,
+            "endTime":   end_ms,
+            "limit":     1000
+        }
+    )
+    print(currency + "BTC", response.json())
+    break
+    
+    pumps_df = pd.DataFrame(response.json(), columns=[
+        "open_time", "open", "high", "low", "close", "volume",
+        "close_time", "quote_volume", "num_trades",
+        "taker_buy_base_volume", "taker_buy_quote_volume", "ignore"
+    ])
+    
+    baseline_df = pd.DataFrame
 
-# Parse into DataFrame
-df = pd.DataFrame(response.json(), columns=[
-    "open_time", "open", "high", "low", "close", "volume",
-    "close_time", "quote_volume", "num_trades",
-    "taker_buy_base_volume", "taker_buy_quote_volume", "ignore"
-])
-
-# Clean up
-df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
-df["close_time"] = pd.to_datetime(df["close_time"], unit="ms")
-df = df.drop(columns=["ignore"])
-
-for col in ["open", "high", "low", "close", "volume", 
-            "quote_volume", "taker_buy_base_volume", 
-            "taker_buy_quote_volume"]:
-    df[col] = df[col].astype(float)
-
-df["num_trades"] = df["num_trades"].astype(int)
-
-print(df.head())
-print(f"\nRows: {len(df)}")
