@@ -2,3 +2,11 @@ data/raw/
 data/processed/
 
 config/
+
+logs/*
+
+.env
+
+__pycache__/
+*.py[cod]
+*$py.class
