@@ -15,6 +15,7 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "lightgbm>=4.6.0",
     "optuna>=4.7.0",
+    "shap>=0.51.0",
 ]
 
 [tool.basedpyright]

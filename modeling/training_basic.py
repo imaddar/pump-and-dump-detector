@@ -4,8 +4,6 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
 from pathlib import Path
-import optuna
-# import optuna.integration.lightgbm as lgb_optuna
 
 df = pd.read_parquet("data/processed/features/features.parquet")
 
