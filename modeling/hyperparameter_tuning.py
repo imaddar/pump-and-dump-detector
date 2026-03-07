@@ -1,7 +1,8 @@
 import logging
 import os
 from pathlib import Path
-
+import json
+from datetime import datetime, timezone
 import lightgbm as lgb
 import numpy as np
 import optuna
@@ -139,3 +140,18 @@ logger.info(f"\nConfusion Matrix:\n{confusion_matrix(y_val, y_pred)}")
 model_path = Path("modeling/models/lgbm_tuned.txt")
 final_model.save_model(str(model_path))
 logger.info(f"Model saved to {model_path}")
+
+
+# ── save model metadata ───────────────────────────────────────────────────────
+metadata = {
+    "threshold": float(best_threshold),
+    "pr_auc": float(pr_auc),
+    "f1": float(f1_scores.max()),
+    "trained_at": datetime.now(timezone.utc).isoformat(),
+    "feature_columns": X_train.columns.tolist()
+}
+
+metadata_path = Path("modeling/models/lgbm_tuned.json")
+with open(metadata_path, "w") as f:
+    json.dump(metadata, f, indent=2)
+logger.info(f"Model metadata saved to {metadata_path}")

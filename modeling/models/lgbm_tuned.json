@@ -1,0 +1,23 @@
+{
+  "threshold": 0.7236817089550225,
+  "pr_auc": 0.7286204820314742,
+  "f1": 0.6805555506520062,
+  "trained_at": "2026-03-07T00:33:00.488185+00:00",
+  "feature_columns": [
+    "price_change_max",
+    "taker_buy_ratio_peak",
+    "vol_burst_max",
+    "trade_count_max",
+    "price_acceleration",
+    "baseline_volume_mean",
+    "baseline_volume_std",
+    "baseline_trade_count_mean",
+    "baseline_trade_count_std",
+    "baseline_candle_range_mean",
+    "baseline_candle_range_std",
+    "vol_zscore_peak",
+    "vol_ratio_vs_7d",
+    "trade_count_zscore",
+    "range_expansion_ratio"
+  ]
+}
