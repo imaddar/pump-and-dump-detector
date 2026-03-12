@@ -16,6 +16,8 @@ dependencies = [
     "lightgbm>=4.6.0",
     "optuna>=4.7.0",
     "shap>=0.51.0",
+    "fastapi>=0.135.1",
+    "uvicorn>=0.41.0",
 ]
 
 [tool.basedpyright]

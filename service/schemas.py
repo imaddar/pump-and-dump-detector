@@ -12,7 +12,7 @@ class PredictRequest(BaseModel):
 class PredictResponse(BaseModel):
     risk_label: str
     risk_score: float = Field(ge=0, le=1)
-    top_signals: list[str]
+    top_signals: list[dict]
     computed_at: datetime
     window_start: datetime
     window_end: datetime
