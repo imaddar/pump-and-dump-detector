@@ -1,6 +1,6 @@
-
 import logging
 from pathlib import Path
+from typing import Any
 
 import lightgbm as lgb
 import matplotlib.pyplot as plt
@@ -9,84 +9,149 @@ import pandas as pd
 import shap
 from sklearn.model_selection import train_test_split
 
-# ── paths ─────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SHAP_DIR = PROJECT_ROOT / "modeling" / "models" / "shap"
-SHAP_DIR.mkdir(parents=True, exist_ok=True)
-(PROJECT_ROOT / "logs").mkdir(exist_ok=True)
+DEFAULT_MODEL_PATH = PROJECT_ROOT / "modeling" / "models" / "lgbm_tuned.txt"
+DEFAULT_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "features" / "features.parquet"
+DEFAULT_SHAP_DIR = PROJECT_ROOT / "modeling" / "models" / "shap"
 
-# ── logging setup ─────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s %(message)s",
-    handlers=[
-        logging.FileHandler(PROJECT_ROOT / "logs" / "shap_analysis.log", mode="w"),
-        logging.StreamHandler(),
-    ],
-)
 logger = logging.getLogger(__name__)
 
-# ── load model ────────────────────────────────────────────────────────────────
-model_path = PROJECT_ROOT / "modeling" / "models" / "lgbm_tuned.txt"
-model = lgb.Booster(model_file=str(model_path))
-logger.info(f"Model loaded from {model_path}")
 
-# ── load data and reproduce val split ─────────────────────────────────────────
-df = pd.read_parquet(PROJECT_ROOT / "data" / "processed" / "features" / "features.parquet")
-df = df.select_dtypes(include=np.number)
-X = df.drop(columns=["success"])
-y = df["success"]
+def load_model(model_path: Path | str = DEFAULT_MODEL_PATH) -> lgb.Booster:
+    return lgb.Booster(model_file=str(model_path))
 
-# must use same random_state as training to get identical val split
-_, X_val, _, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
-logger.info(f"Val size: {len(X_val)}  |  Positive rate: {y_val.mean():.3f}")
 
-# ── compute SHAP values ───────────────────────────────────────────────────────
-logger.info("Computing SHAP values...")
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(X_val)
+def load_validation_data(
+    data_path: Path | str = DEFAULT_DATA_PATH,
+    target_column: str = "success",
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.Series]:
+    df = pd.read_parquet(data_path)
+    df = df.select_dtypes(include=np.number)
+    X = df.drop(columns=[target_column])
+    y = df[target_column]
+    _, X_val, _, y_val = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        stratify=y,
+        random_state=random_state,
+    )
+    return X_val, y_val
 
-# newer SHAP versions return a list [class_0_values, class_1_values]
-# we want class 1 (pump)
-if isinstance(shap_values, list):
-    shap_vals = shap_values[1]
-    expected_value = explainer.expected_value[1]
-else:
-    shap_vals = shap_values
-    expected_value = explainer.expected_value
 
-logger.info("SHAP values computed")
+def build_tree_explainer(model: lgb.Booster) -> shap.TreeExplainer:
+    return shap.TreeExplainer(model)
 
-# ── summary plot ──────────────────────────────────────────────────────────────
-# every prediction as a dot — shows direction and magnitude of each feature
-shap.summary_plot(shap_vals, X_val, show=False)
-plt.tight_layout()
-plt.savefig(SHAP_DIR / "summary_plot.png", dpi=150, bbox_inches="tight")
-plt.close()
-logger.info(f"Saved {SHAP_DIR / 'summary_plot.png'}")
 
-# ── feature importance bar plot ───────────────────────────────────────────────
-# mean absolute SHAP value per feature — clean bar chart
-shap.summary_plot(shap_vals, X_val, plot_type="bar", show=False)
-plt.tight_layout()
-plt.savefig(SHAP_DIR / "feature_importance.png", dpi=150, bbox_inches="tight")
-plt.close()
-logger.info(f"Saved {SHAP_DIR / 'feature_importance.png'}")
+def normalize_binary_shap_output(
+    shap_values: Any,
+    expected_value: Any,
+) -> tuple[np.ndarray, Any]:
+    if isinstance(shap_values, list):
+        normalized_values = np.asarray(shap_values[1])
+        normalized_expected_value = expected_value[1]
+    else:
+        normalized_values = np.asarray(shap_values)
+        normalized_expected_value = expected_value
+    return normalized_values, normalized_expected_value
 
-# ── waterfall plot — highest confidence pump prediction ───────────────────────
-y_prob = model.predict(X_val)
-highest_pump_idx = y_prob.argmax()
 
-shap_explanation = shap.Explanation(
-    values=shap_vals[highest_pump_idx],
-    base_values=expected_value,
-    data=X_val.iloc[highest_pump_idx],
-    feature_names=X_val.columns.tolist()
-)
-shap.plots.waterfall(shap_explanation, show=False)
-plt.tight_layout()
-plt.savefig(SHAP_DIR / "waterfall_top_prediction.png", dpi=150, bbox_inches="tight")
-plt.close()
-logger.info(f"Saved {SHAP_DIR / 'waterfall_top_prediction.png'}")
+def compute_shap_values(
+    explainer: shap.TreeExplainer,
+    features: pd.DataFrame,
+) -> tuple[np.ndarray, Any]:
+    shap_values = explainer.shap_values(features)
+    return normalize_binary_shap_output(shap_values, explainer.expected_value)
 
-logger.info(f"SHAP analysis complete — plots saved to {SHAP_DIR}")
+
+def get_top_feature_impacts(
+    shap_values_row: np.ndarray,
+    feature_names: list[str],
+    feature_values: pd.Series | None = None,
+    top_n: int = 3,
+) -> list[dict[str, Any]]:
+    if top_n <= 0:
+        return []
+
+    ranked_indices = np.argsort(np.abs(shap_values_row))[::-1][:top_n]
+    impacts: list[dict[str, Any]] = []
+    for index in ranked_indices:
+        impact = {
+            "feature": feature_names[index],
+            "shap_value": float(shap_values_row[index]),
+        }
+        if feature_values is not None:
+            impact["feature_value"] = float(feature_values.iloc[index])
+        impacts.append(impact)
+    return impacts
+
+
+def get_top_feature_names(
+    shap_values_row: np.ndarray,
+    feature_names: list[str],
+    top_n: int = 3,
+) -> list[str]:
+    return [
+        impact["feature"]
+        for impact in get_top_feature_impacts(
+            shap_values_row=shap_values_row,
+            feature_names=feature_names,
+            top_n=top_n,
+        )
+    ]
+
+
+def build_waterfall_explanation(
+    shap_values_row: np.ndarray,
+    expected_value: Any,
+    feature_row: pd.Series,
+) -> shap.Explanation:
+    return shap.Explanation(
+        values=shap_values_row,
+        base_values=expected_value,
+        data=feature_row,
+        feature_names=feature_row.index.tolist(),
+    )
+
+
+def save_summary_plot(
+    shap_values: np.ndarray,
+    features: pd.DataFrame,
+    output_path: Path | str,
+) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shap.summary_plot(shap_values, features, show=False)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    return output_path
+
+
+def save_feature_importance_plot(
+    shap_values: np.ndarray,
+    features: pd.DataFrame,
+    output_path: Path | str,
+) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shap.summary_plot(shap_values, features, plot_type="bar", show=False)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    return output_path
+
+
+def save_waterfall_plot(
+    explanation: shap.Explanation,
+    output_path: Path | str,
+) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shap.plots.waterfall(explanation, show=False)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    return output_path
