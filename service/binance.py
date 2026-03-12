@@ -19,9 +19,11 @@ class BinanceNoDataError(ValueError):
         super().__init__(message)
 
 
-def get_pump_data(symbol: str, pump_time: datetime) -> list[list]:
-    start_ms = int((pump_time - timedelta(minutes=30)).timestamp() * 1000)
-    end_ms   = int((pump_time + timedelta(minutes=30)).timestamp() * 1000)
+def get_pump_data(symbol: str, pump_time: datetime):
+    start_time = pump_time - timedelta(minutes=30)
+    end_time   = pump_time + timedelta(minutes=30)
+    start_ms   = int(start_time.timestamp() * 1000)
+    end_ms     = int(end_time.timestamp() * 1000)
 
     try:
         response = requests.get(
@@ -51,7 +53,7 @@ def get_pump_data(symbol: str, pump_time: datetime) -> list[list]:
         raise BinanceNoDataError(msg)
 
     logger.info(f"Fetched {len(data)} pump candles for {symbol}")
-    return data
+    return data, start_time, end_time
 
 
 def get_baseline_data(symbol: str, pump_time: datetime) -> list[list]:
