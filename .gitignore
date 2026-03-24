@@ -1,5 +1,5 @@
 data/raw/
-data/processed/
+data/processed/features/X_train.bin
 
 config/
 
