@@ -12,17 +12,14 @@ from datetime import datetime, timezone
 
 
 
-client = TestClient(app)
-
-
-def test_health_check():
-    response = client.get("/health")
+def test_health_check(test_client):
+    response = test_client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert "model_version" in response.json()
     
-def test_metrics():
-    response = client.get("/model/metrics")
+def test_metrics(test_client):
+    response = test_client.get("/model/metrics")
     assert response.status_code == 200
     data = response.json()
     assert "pr_auc" in data
@@ -31,11 +28,33 @@ def test_metrics():
     assert isinstance(data["pr_auc"], float)
     assert isinstance(data["f1_score"], float)
     assert isinstance(data["threshold"], float)
-    
-@patch("service.binance.get_pump_data")
-@patch("service.binance.get_baseline_data")
-def test_predict(mock_baseline, mock_pump):
+
+@patch("service.app.resolve_symbol", return_value="MOCKBTC")
+@patch("service.app.get_baseline_data")
+@patch("service.app.get_pump_data")
+def test_predict(mock_pump, mock_baseline, mock_resolve, test_client):
     now = datetime.now(timezone.utc)
     mock_pump.return_value = (MOCK_PUMP_CANDLES, now, now)
     mock_baseline.return_value = MOCK_BASELINE_CANDLES
+    
+    response = test_client.post("/predict", json={"symbol": "MOCK", "time": now.isoformat()})
+    assert response.status_code == 200
+    data = response.json()
+    assert "risk_label" in data
+    assert "risk_score" in data
+    assert "top_signals" in data
+    assert "computed_at" in data
+    assert "window_start" in data
+    assert "window_end" in data
+    assert "latency_ms" in data
+    assert "model_version" in data
+    
+def test_predict_missing_symbol(test_client):
+    now = datetime.now(timezone.utc)
+    response = test_client.post("/predict", json={"time": now.isoformat()})
+    assert response.status_code == 422
+
+def test_predict_invalid_time(test_client):
+    response = test_client.post("/predict", json={"symbol": "MOCK", "time": "not-a-time"})
+    assert response.status_code == 422
     
