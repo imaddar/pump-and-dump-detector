@@ -1,4 +1,6 @@
 import pytest
+import pandas as pd
+import numpy as np
 import json
 from pathlib import Path
 import lightgbm as lgb
