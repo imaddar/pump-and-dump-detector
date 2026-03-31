@@ -32,7 +32,8 @@ def test_metrics(test_client):
 @patch("service.app.resolve_symbol", return_value="MOCKBTC")
 @patch("service.app.get_baseline_data")
 @patch("service.app.get_pump_data")
-def test_predict(mock_pump, mock_baseline, mock_resolve, test_client):
+@patch("service.app.check_redis_symbol", return_value=False)
+def test_predict(mock_redis, mock_pump, mock_baseline, mock_resolve, test_client):
     now = datetime.now(timezone.utc)
     mock_pump.return_value = (MOCK_PUMP_CANDLES, now, now)
     mock_baseline.return_value = MOCK_BASELINE_CANDLES
