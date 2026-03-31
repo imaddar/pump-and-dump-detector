@@ -1,11 +1,3 @@
-# Components of a Kafka stream
-
-# Producers: these are applications that handle the data collection and push the information to the specific topic
-# Topics: these are the data blocks that recieve the information from the producers and store them
-# - Patitions: each topic can be partitiioned for more concurrency/parallelism
-# Brokers: these handle the managing of the data within the topics; store and manage partitions, and handle read/writes from producers/consumers
-# Consumers (Not relevant for this file): they are what reads from the Kafka topics, sending read requests
-
 from kafka import KafkaProducer
 import json
 import schedule
