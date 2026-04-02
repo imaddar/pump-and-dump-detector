@@ -48,7 +48,15 @@ def test_predict(mock_redis, mock_pump, mock_baseline, mock_resolve, test_client
     assert "window_start" in data
     assert "window_end" in data
     assert "latency_ms" in data
+    assert "stage_timings_ms" in data
     assert "model_version" in data
+    assert "resolve_symbol" in data["stage_timings_ms"]
+    assert "get_pump_data" in data["stage_timings_ms"]
+    assert "get_baseline_data" in data["stage_timings_ms"]
+    assert "compute_features" in data["stage_timings_ms"]
+    assert "model_predict" in data["stage_timings_ms"]
+    assert "compute_shap_values" in data["stage_timings_ms"]
+    assert "total" in data["stage_timings_ms"]
     
 def test_predict_missing_symbol(test_client):
     now = datetime.now(timezone.utc)

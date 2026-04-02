@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import requests
 
 
-def time_request(base_url: str, symbol: str, timestamp: str) -> float:
+def time_request(base_url: str, symbol: str, timestamp: str) -> dict[str, float | dict[str, float]]:
     start = time.perf_counter()
     response = requests.post(
         f"{base_url}/predict",
@@ -14,7 +14,16 @@ def time_request(base_url: str, symbol: str, timestamp: str) -> float:
         timeout=30,
     )
     response.raise_for_status()
-    return (time.perf_counter() - start) * 1000
+    round_trip_ms = (time.perf_counter() - start) * 1000
+    payload = response.json()
+    return {
+        "round_trip_ms": round_trip_ms,
+        "api_latency_ms": float(payload["latency_ms"]),
+        "stage_timings_ms": {
+            key: float(value)
+            for key, value in payload.get("stage_timings_ms", {}).items()
+        },
+    }
 
 
 def percentile(values: list[float], pct: float) -> float:
@@ -25,6 +34,39 @@ def percentile(values: list[float], pct: float) -> float:
     return ordered[index]
 
 
+def summarize_latencies(
+    results: list[dict[str, float | dict[str, float]]],
+) -> dict[str, dict[str, float] | dict[str, float]]:
+    summary: dict[str, dict[str, float] | dict[str, float]] = {}
+    for metric_name in ("round_trip_ms", "api_latency_ms"):
+        values = [float(result[metric_name]) for result in results]
+        summary[metric_name] = {
+            "mean": statistics.mean(values),
+            "p50": percentile(values, 50),
+            "p95": percentile(values, 95),
+            "max": max(values),
+        }
+
+    stage_names = sorted(
+        {
+            stage_name
+            for result in results
+            for stage_name in result.get("stage_timings_ms", {}).keys()
+        }
+    )
+    summary["stage_timings_ms"] = {
+        stage_name: statistics.mean(
+            [
+                float(result["stage_timings_ms"][stage_name])
+                for result in results
+                if stage_name in result.get("stage_timings_ms", {})
+            ]
+        )
+        for stage_name in stage_names
+    }
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(description="Benchmark /predict latency.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
@@ -33,15 +75,22 @@ def main():
     parser.add_argument("--time", dest="timestamp", default=datetime.now(timezone.utc).isoformat())
     args = parser.parse_args()
 
-    latencies = [
+    results = [
         time_request(args.base_url, args.symbol, args.timestamp)
         for _ in range(args.iterations)
     ]
+    summary = summarize_latencies(results)
+
     print(f"iterations={args.iterations}")
-    print(f"mean_ms={statistics.mean(latencies):.2f}")
-    print(f"p50_ms={percentile(latencies, 50):.2f}")
-    print(f"p95_ms={percentile(latencies, 95):.2f}")
-    print(f"max_ms={max(latencies):.2f}")
+    for metric_name, values in summary.items():
+        if metric_name == "stage_timings_ms":
+            continue
+        print(f"{metric_name}_mean_ms={values['mean']:.2f}")
+        print(f"{metric_name}_p50_ms={values['p50']:.2f}")
+        print(f"{metric_name}_p95_ms={values['p95']:.2f}")
+        print(f"{metric_name}_max_ms={values['max']:.2f}")
+    for stage_name, value in summary["stage_timings_ms"].items():
+        print(f"stage_{stage_name}_mean_ms={value:.2f}")
 
 
 if __name__ == "__main__":

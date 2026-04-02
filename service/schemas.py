@@ -17,5 +17,6 @@ class PredictResponse(BaseModel):
     window_start: datetime
     window_end: datetime
     latency_ms: float
+    stage_timings_ms: dict[str, float]
     model_version: str # gives model version for debugging purposes
     
