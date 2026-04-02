@@ -1,6 +1,11 @@
 from unittest.mock import Mock, patch
 
-from scripts.benchmark_predict import summarize_latencies, time_request
+from scripts.benchmark_predict import (
+    build_case_plan,
+    summarize_case_results,
+    summarize_latencies,
+    time_request,
+)
 
 
 def test_time_request_returns_round_trip_and_api_latency():
@@ -59,3 +64,25 @@ def test_summarize_latencies_includes_average_stage_timings():
 
     assert summary["stage_timings_ms"]["resolve_symbol"] == 15.0
     assert summary["stage_timings_ms"]["total"] == 65.0
+
+
+def test_build_case_plan_supports_mixed_traffic():
+    plan = build_case_plan(iterations=10, scenario="mixed-80-20")
+
+    assert len(plan) == 10
+    assert plan.count("warm") == 8
+    assert plan.count("cold") == 2
+
+
+def test_summarize_case_results_groups_by_case():
+    summary = summarize_case_results(
+        [
+            {"case": "warm", "round_trip_ms": 1.0, "api_latency_ms": 0.8, "stage_timings_ms": {}},
+            {"case": "warm", "round_trip_ms": 2.0, "api_latency_ms": 1.2, "stage_timings_ms": {}},
+            {"case": "cold", "round_trip_ms": 5.0, "api_latency_ms": 4.2, "stage_timings_ms": {}},
+        ]
+    )
+
+    assert summary["all"]["round_trip_ms"]["mean"] == 8.0 / 3.0
+    assert summary["warm"]["round_trip_ms"]["mean"] == 1.5
+    assert summary["cold"]["api_latency_ms"]["mean"] == 4.2

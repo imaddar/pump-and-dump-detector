@@ -68,6 +68,28 @@ def run_forever(consumer):
         consumer.close()
 
 
+def run_until(
+    consumer,
+    target_processed: int,
+    idle_limit: int,
+    handle_message_fn=handle_message,
+):
+    processed = 0
+    idle_polls = 0
+    try:
+        while processed < target_processed and idle_polls < idle_limit:
+            msg = consumer.poll(1.0)
+            if msg is None:
+                idle_polls += 1
+                continue
+            idle_polls = 0
+            if handle_message_fn(msg):
+                processed += 1
+    finally:
+        consumer.close()
+    return processed
+
+
 def main():
     run_forever(create_consumer())
 
