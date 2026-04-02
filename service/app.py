@@ -1,7 +1,7 @@
 import json
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import lightgbm as lgb
@@ -19,6 +19,8 @@ from .binance import get_pump_data, get_baseline_data, resolve_symbol, BinanceCo
 from features.feature_engineering import compute_features
 from streaming.redis_client import check_redis_symbol, get_redis_symbol
 
+CACHE_MAX_AGE = timedelta(hours=2)
+
 
 @asynccontextmanager
 async def lifespan(app):
@@ -32,6 +34,25 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+def get_cached_feature_dict(symbol: str, request_time: datetime) -> dict | None:
+    if not check_redis_symbol(symbol, "pump"):
+        return None
+
+    cached_payload = get_redis_symbol(symbol, "pump")
+    if not cached_payload:
+        return None
+
+    if isinstance(cached_payload, dict) and "features" in cached_payload:
+        computed_at = datetime.fromisoformat(cached_payload["computed_at"])
+        if computed_at.tzinfo is None:
+            computed_at = computed_at.replace(tzinfo=timezone.utc)
+        if request_time - computed_at > CACHE_MAX_AGE:
+            raise HTTPException(status_code=503, detail=f"Cached features for {symbol} are stale")
+        return cached_payload["features"]
+
+    return cached_payload
 
 @app.post("/predict")
 async def predict(request: Request, body: PredictRequest):
@@ -48,8 +69,9 @@ async def predict(request: Request, body: PredictRequest):
     except BinanceConnectionError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-    if check_redis_symbol(symbol, "pump"):
-        feature_dict = get_redis_symbol(symbol, "pump")
+    cached_feature_dict = get_cached_feature_dict(symbol, pump_time)
+    if cached_feature_dict is not None:
+        feature_dict = cached_feature_dict
         window_start = window_end = pump_time
     else:
         try:
