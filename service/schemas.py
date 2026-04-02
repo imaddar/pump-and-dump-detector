@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class PredictRequest(BaseModel):
     symbol: str
     time: datetime = Field(default_factory = lambda: datetime.now(tz=timezone.utc))
+    include_explanations: bool = True
     
 
 # class to validate our outputs

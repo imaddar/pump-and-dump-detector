@@ -119,17 +119,21 @@ async def predict(request: Request, body: PredictRequest):
     record_stage_timing(stage_timings_ms, "model_predict", stage_start)
 
     risk_label = "high_risk" if risk_score >= metadata["threshold"] else "low_risk"
-    stage_start = time.perf_counter()
-    try:
-        shap_values, _ = compute_shap_values(explainer, feature_frame)
-        top_signals = get_top_feature_impacts(
-            shap_values_row=shap_values[0],
-            feature_names=feature_columns,
-            top_n=3,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"SHAP computation failed: {str(e)}")
-    record_stage_timing(stage_timings_ms, "compute_shap_values", stage_start)
+    if body.include_explanations:
+        stage_start = time.perf_counter()
+        try:
+            shap_values, _ = compute_shap_values(explainer, feature_frame)
+            top_signals = get_top_feature_impacts(
+                shap_values_row=shap_values[0],
+                feature_names=feature_columns,
+                top_n=3,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"SHAP computation failed: {str(e)}")
+        record_stage_timing(stage_timings_ms, "compute_shap_values", stage_start)
+    else:
+        top_signals = []
+        stage_timings_ms["compute_shap_values"] = 0.0
 
     latency_ms = (time.perf_counter() - start) * 1000
     stage_timings_ms["total"] = latency_ms

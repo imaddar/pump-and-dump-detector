@@ -66,4 +66,32 @@ def test_predict_missing_symbol(test_client):
 def test_predict_invalid_time(test_client):
     response = test_client.post("/predict", json={"symbol": "MOCK", "time": "not-a-time"})
     assert response.status_code == 422
-    
+
+
+@patch("service.app.resolve_symbol", return_value="MOCKBTC")
+@patch("service.app.get_baseline_data")
+@patch("service.app.get_pump_data")
+@patch("service.app.check_redis_symbol", return_value=False)
+@patch("service.app.compute_shap_values")
+def test_predict_can_skip_shap(
+    mock_compute_shap,
+    mock_redis,
+    mock_pump,
+    mock_baseline,
+    mock_resolve,
+    test_client,
+):
+    now = datetime.now(timezone.utc)
+    mock_pump.return_value = (MOCK_PUMP_CANDLES, now, now)
+    mock_baseline.return_value = MOCK_BASELINE_CANDLES
+
+    response = test_client.post(
+        "/predict",
+        json={"symbol": "MOCK", "time": now.isoformat(), "include_explanations": False},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["top_signals"] == []
+    assert data["stage_timings_ms"]["compute_shap_values"] == 0.0
+    mock_compute_shap.assert_not_called()

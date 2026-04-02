@@ -1,5 +1,102 @@
 # Benchmarks
 
+## 2026-04-02 Post-Optimization Pass
+
+This pass was run after four concrete speedups:
+
+- direct numeric feature computation replaced the pandas-heavy cold inference path
+- SHAP explanations became optional on `/predict`
+- the consumer now defers pump payloads until baseline data arrives instead of dropping them
+- the producer now fetches snapshots concurrently and keys Kafka messages by symbol
+
+### Controlled Endpoint Results
+
+Environment:
+`FastAPI TestClient` with mocked market data so the comparison isolates application changes rather than external network noise.
+
+#### Cold Cache With Explanations
+
+- API latency mean: 1.25 ms
+- API latency p50: 0.85 ms
+- API latency p95: 2.40 ms
+- Round-trip mean: 1.96 ms
+- Round-trip p50: 1.45 ms
+- Round-trip p95: 3.46 ms
+- `compute_features` mean: 0.02 ms
+- `compute_shap_values` mean: 0.38 ms
+
+Compared with the earlier cold baseline:
+
+- cold API latency improved from 7.06 ms to 1.25 ms
+- cold round-trip improved from 8.02 ms to 1.96 ms
+- `compute_features` dropped from 5.99 ms to 0.02 ms
+
+#### Cold Cache Without Explanations
+
+- API latency mean: 0.60 ms
+- API latency p50: 0.53 ms
+- API latency p95: 0.90 ms
+- Round-trip mean: 1.15 ms
+- Round-trip p50: 1.04 ms
+- Round-trip p95: 1.82 ms
+- `compute_shap_values`: 0.00 ms
+
+#### Warm Cache With Explanations
+
+- API latency mean: 1.03 ms
+- API latency p50: 0.98 ms
+- API latency p95: 1.46 ms
+- Round-trip mean: 1.72 ms
+- Round-trip p50: 1.66 ms
+- Round-trip p95: 2.45 ms
+
+#### Warm Cache Without Explanations
+
+- API latency mean: 0.53 ms
+- API latency p50: 0.49 ms
+- API latency p95: 0.80 ms
+- Round-trip mean: 1.03 ms
+- Round-trip p50: 1.04 ms
+- Round-trip p95: 1.45 ms
+
+### Live Redis and Kafka Follow-Up
+
+Environment:
+`docker compose` Redis + Kafka + Zookeeper, host-side `streaming.consumer`, host-side `uvicorn`, and interleaved baseline/pump publishing through real Kafka topics.
+
+#### Interleaved Kafka Publish to Warm Redis Cache
+
+- Symbols: 25
+- Publish flush time: 264.01 ms
+- Post-flush until all `pump:*` keys were ready: 85.60 ms
+- Total until all `pump:*` keys were ready: 349.61 ms
+
+This is the key correctness improvement. Earlier live runs could fail because pump messages arrived before baseline messages and were skipped. After the deferred replay change, all warm pump cache entries were populated successfully under interleaved live traffic.
+
+#### Live Warm `/predict` After Cache Fill
+
+With explanations:
+
+- Warm round-trip mean: 38.11 ms
+- Warm API latency mean: 2.93 ms
+
+Without explanations:
+
+- Warm round-trip mean: 14.40 ms
+- Warm API latency mean: 1.16 ms
+
+Compared with the earlier 25-symbol live infra run:
+
+- warm round-trip improved from 49.37 ms to 38.11 ms with explanations enabled
+- warm API latency improved from 4.11 ms to 2.93 ms with explanations enabled
+
+### Post-Optimization Takeaways
+
+- The biggest measured win came from replacing pandas-based cold-path feature computation.
+- Optional SHAP is a strong latency lever and cuts warm and cold API latency by roughly half.
+- The live Kafka/Redis path is now materially more reliable because pump messages are deferred and replayed instead of being lost when baseline arrives later.
+- The producer is now structured for better throughput via concurrent fetches and symbol-keyed Kafka messages, though the clearest measured gains in this pass were from cold-path compute reduction and SHAP skipping.
+
 ## 2026-04-02 Live Infra Pass
 
 These are the highest-signal benchmark results in the repo right now because they use real Docker-backed Redis and Kafka, a real host-side consumer process, and a real uvicorn API server. This is the benchmark slice that best represents production-style system behavior.

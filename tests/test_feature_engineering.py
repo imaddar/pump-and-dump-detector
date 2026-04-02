@@ -9,6 +9,7 @@ from pandas import DatetimeTZDtype
 from features.feature_engineering import (
     FEATURE_COLUMNS,
     compute_features,
+    compute_features_from_arrays,
     parse_klines,
 )
 
@@ -70,3 +71,12 @@ def test_compute_features_value_constraints() -> None:
     assert 0.0 <= features["taker_buy_ratio_peak"] <= 1.0
     assert features["baseline_volume_mean"] > 0.0
     assert features["baseline_volume_std"] >= 0.0
+
+
+def test_compute_features_from_arrays_matches_dataframe_path() -> None:
+    fast_features = compute_features_from_arrays(MOCK_PUMP_CANDLES, MOCK_BASELINE_CANDLES)
+    dataframe_features = compute_features(MOCK_PUMP_CANDLES, MOCK_BASELINE_CANDLES)
+
+    assert list(fast_features.keys()) == FEATURE_COLUMNS
+    for feature_name in FEATURE_COLUMNS:
+        assert fast_features[feature_name] == pytest.approx(dataframe_features[feature_name])
